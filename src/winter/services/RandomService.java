@@ -14,7 +14,7 @@ public class RandomService {
      * @return a random integer between min and max
      */
     @RemoteMethod
-    public int randomInt(int min, int max) {
+    public int randomInt(Integer min, Integer max) {
         return (int) (Math.random() * (max - min + 1)) + min;
     }
 
@@ -25,7 +25,7 @@ public class RandomService {
      * @return a random password    
      */
     @RemoteMethod
-    public String randomPassword(int length) {
+    public String randomPassword(Integer length) {
         String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         StringBuilder password = new StringBuilder();
 

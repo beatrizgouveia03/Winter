@@ -22,9 +22,11 @@ public class ComponentRegistry {
             remoteObjects.put(componentName, instance);
 
             for (Method method : clazz.getDeclaredMethods()) {
-                if (method.isAnnotationPresent(RemoteMethod.class)) {
+                if (method.isAnnotationPresent(RemoteMethod.class)) {    
                     String methodName = method.getName();
-                    remoteMethods.put(componentName + "/" + methodName, method);
+                    String key = buildMethodKey(componentName, methodName, method.getParameterTypes());
+
+                    remoteMethods.put(key, method);
                 }
             }
         }
@@ -34,7 +36,16 @@ public class ComponentRegistry {
         return remoteObjects.get(name);
     }
 
-    public static Method getMethod(String path) {
-        return remoteMethods.get(path);
+    public static Method getMethod(String component, String method, Class<?>[] paramTypes) {
+        String key = buildMethodKey(component, method, paramTypes);
+        
+        return remoteMethods.get(key);
+    }
+
+    private static String buildMethodKey(String component, String method, Class<?>[] paramTypes){
+        StringBuilder key = new StringBuilder(component + "/" + method);
+        for(Class<?> param : paramTypes) key.append(param.getSimpleName());
+
+        return key.toString();
     }
 }
