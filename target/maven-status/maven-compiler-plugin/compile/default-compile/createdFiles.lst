@@ -1,0 +1,5 @@
+com\winter\annotations\MethodHTTP.class
+com\winter\annotations\RemoteObject.class
+com\winter\Main.class
+com\winter\annotations\Param.class
+com\winter\annotations\RemoteMethod.class

@@ -1,1 +1,1 @@
-Middleware implementada para a matérai de Programação Distribuída
+Middleware implementada para a matéria de Programação Distribuída
