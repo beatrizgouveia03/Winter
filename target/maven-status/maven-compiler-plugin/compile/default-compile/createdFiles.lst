@@ -1,5 +1,13 @@
+com\winter\core\Invoker.class
+com\winter\core\Marshaller.class
+com\winter\core\Winter.class
 com\winter\annotations\MethodHTTP.class
+com\winter\core\RemoteError.class
 com\winter\annotations\RemoteObject.class
 com\winter\Main.class
-com\winter\annotations\Param.class
+com\winter\core\Response.class
 com\winter\annotations\RemoteMethod.class
+com\winter\core\Marshaller$1.class
+com\winter\core\RemoteMethodEntry.class
+com\winter\core\ServerRequestHandler.class
+com\winter\annotations\Param.class
