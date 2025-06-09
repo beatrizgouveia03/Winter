@@ -7,6 +7,10 @@ import java.util.Map;
 
 import com.winter.annotations.*;
 
+/**
+ * Represents a remote method entry in the registry.
+ * Contains the instance of the remote object, the method itself, and the HTTP method annotation.
+ */
 class RemoteMethodEntry{
     private Object instance; // Instance of the remote object 
     private Method method; // The remote method itself
@@ -31,6 +35,11 @@ class RemoteMethodEntry{
     }
 }
 
+/**
+ * The Winter class is the core of the Winter framework.
+ * It handles the registration of remote objects and their methods,
+ * and processes incoming HTTP requests by routing them to the appropriate remote method.
+ */
 public class Winter {
     private Invoker invoker;
     private Marshaller marshaller;
@@ -43,6 +52,11 @@ public class Winter {
         this.remoteMethodsRegistry = new HashMap<>();
     }
 
+    /**
+     * Registers a remote object instance and its methods for remote invocation.
+     * The class must be annotated with @RemoteObject and each method must be annotated with @RemoteMethod.
+     * @param remoteObjInstance
+     */
     public void registerRemoteMethods(Object remoteObjInstance) {
         Class<?> clazz = remoteObjInstance.getClass();
        
@@ -70,11 +84,28 @@ public class Winter {
         }
     }
 
-    public String handleRequest(String methodHTTP, String uri, String requestBody, Map<String,String> headers) throws Exception {
+
+    /**
+     * Handles an incoming HTTP request by routing it to the appropriate remote method.
+     * @param methodHTTP The HTTP method of the request (GET, POST, etc.)
+     * @param uri The URI of the request
+     * @param requestBody The body of the request (if applicable)
+     * @param headers The headers of the request
+     * @return A response string, which may be a result or an error message in JSON format
+     * @throws Exception If an error occurs during processing
+     */
+    public Response handleRequest(String methodHTTP, String uri, String requestBody, Map<String,String> headers) throws Exception {
         //Retrieve the method entry based on the HTTP method
-        MethodHTTP requestMethod = MethodHTTP.valueOf(methodHTTP.toUpperCase());
-        Map<String, String> queryParams = new HashMap<>();
+        MethodHTTP requestMethod = null;
+
+        try {
+            requestMethod = MethodHTTP.valueOf(methodHTTP.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new UnsupportedOperationException("Unsupported HTTP method: " + methodHTTP);
+        }
+
         String originalUri = uri;
+        Map<String, String> queryParams = new HashMap<>();
 
         // Check if the URI contains a query string
         int queryStartIndex = uri.indexOf('?');
@@ -85,32 +116,54 @@ public class Winter {
             queryParams = parseQueryString(queryString);
         }
 
-        
-        // Check if the URI is registered and retrieve the corresponding method entries
-        Map<MethodHTTP, RemoteMethodEntry> methodMap = remoteMethodsRegistry.get(originalUri);
-        
-        if (methodMap == null) {
-            throw new IllegalArgumentException("No remote method found for URI: " + uri);
+        try{
+            // Check if the URI is registered and retrieve the corresponding method entries
+            Map<MethodHTTP, RemoteMethodEntry> methodMap = remoteMethodsRegistry.get(originalUri);
+            
+            if (methodMap == null) {
+                throw new IllegalArgumentException("No remote method found for URI: " + uri);
+            }
+
+            RemoteMethodEntry entry = methodMap.get(requestMethod);
+
+            if (entry == null) {
+                throw new UnsupportedOperationException("HTTP method " + requestMethod + " not supported for URI: " + uri);
+            }
+
+            //Unmarshal the request body to the appropriate parameters
+            Object[] args = marshaller.unmarshalParameters(entry.getMethod(), requestBody, queryParams);
+
+            //Invoke the method using the invoker
+            Object result = invoker.invoke(entry.getInstance(), entry.getMethod(), args);
+
+            //Marshal the result to a response string
+            String response = marshaller.marshal(result);
+
+            return new Response(response, 200);
+        } catch (IllegalArgumentException e) {
+            // Illegal Argument Exception (400 Bad Request)
+            System.err.println("Request Error (400 - Bad Request): " + e.getMessage());
+            String errorJson = marshaller.marshal(new RemoteError(400, "Bad Request: " + e.getMessage(), e.getClass().getSimpleName()));
+            return new Response(errorJson, 400);
+        } catch (UnsupportedOperationException e) {
+            //Method Not Allowed Exception (405 Method Not Allowed)
+            System.err.println("Method Error (405 - Method Not Allowed): " + e.getMessage());
+            String errorJson =  marshaller.marshal(new RemoteError(405, "Method Not Allowed: " + e.getMessage(), e.getClass().getSimpleName()));
+            return new Response(errorJson,405 );
+        } catch (Exception e) {
+            // Any other exception (500 Internal Server Error)
+            System.err.println("Internal Server Error (500 - Internal Server Error): " + e.getMessage());
+            e.printStackTrace(); // Imprimir stack trace no servidor para depuração
+            String errorJson =  marshaller.marshal(new RemoteError(500, "Internal Server Error: " + e.getMessage(), e.getClass().getSimpleName()));
+            return new Response(errorJson, 500);
         }
-
-        RemoteMethodEntry entry = methodMap.get(requestMethod);
-
-        if (entry == null) {
-            throw new UnsupportedOperationException("HTTP method " + requestMethod + " not supported for URI: " + uri);
-        }
-
-        //Unmarshal the request body to the appropriate parameters
-        Object[] args = marshaller.unmarshalParameters(entry.getMethod(), requestBody, queryParams);
-
-        //Invoke the method using the invoker
-        Object result = invoker.invoke(entry.getInstance(), entry.getMethod(), args);
-
-        //Marshal the result to a response string
-        String response = marshaller.marshal(result);
-
-        return response;
     }
 
+    /**
+     * Parses a query string into a map of parameters.
+     * @param queryString
+     * @return A map of query parameters where the key is the parameter name and the value is the parameter value.
+     */
     private Map<String, String> parseQueryString(String queryString) {
         Map<String, String> params = new HashMap<>();
         // If the query string is null or empty, return an empty map

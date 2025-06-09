@@ -7,17 +7,30 @@ import java.util.Map;
 
 import java.net.ServerSocket;
 
+/**
+ * ServerRequestHandler is responsible for handling incoming HTTP requests
+ * and sending appropriate responses back to the client.
+ * It listens for incoming connections on a specified port and processes
+ * requests using the Winter framework's Broker class.
+ */
 public class ServerRequestHandler {
 
+    private Winter winter;
+    private Marshaller marshaller;
     private int port = 8080; // Default port
     private ServerSocket serverSocket;
     private volatile boolean running = false;
-    private Winter winter;
 
-    public ServerRequestHandler(Winter winter) {
+    public ServerRequestHandler(Winter winter, Marshaller marshaller) {
         this.winter = winter;
+        this.marshaller = marshaller;
     }
 
+    /**
+     * Starts the server and listens for incoming requests on the specified port.
+     * If the port is already in use, it will throw an IOException.
+     * @throws IOException
+     */
     public void start() throws IOException {
         serverSocket = new ServerSocket(port);
 
@@ -43,6 +56,9 @@ public class ServerRequestHandler {
         }
     }
 
+    /**
+     * Stops the server and closes the server socket.
+     */
     public void stop() {
         running = false;
         try {
@@ -54,6 +70,12 @@ public class ServerRequestHandler {
         }
     }
 
+    /**
+     * Handles incoming client requests.
+     * Reads the request line, headers, and body, processes the request,
+     * and sends an appropriate response back to the client.
+     * @param clientSocket The socket connected to the client.
+     */
     private void handleClient(Socket clientSocket) {
         try(
             BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream())); 
@@ -81,39 +103,36 @@ public class ServerRequestHandler {
                 return;
             }
 
-            String method = requestParts[0]; //Ex: GET, POST, etc.
             String uri = requestParts[1]; //Ex: /randomGenerator/generateUsername?username=test
+            String method = requestParts[0]; //Ex: GET, POST, etc.
 
 
 
             // Read headers until an empty line is encountered and locate the Content-Length header
-            Map<String, String> headers = new HashMap<>();
-            int contentLength = 0;
             String headerLine;
+            int contentLength = 0;
+            Map<String, String> headers = new HashMap<>();
 
             while ((headerLine = in.readLine()) != null && !(headerLine = in.readLine()).isEmpty()) {
                 int colonIndex = headerLine.indexOf(":");
+                
                 if (colonIndex != -1) {
                     String headerName = headerLine.substring(0, colonIndex).trim();
                     String headerValue = headerLine.substring(colonIndex + 1).trim();
+
                     headers.put(headerName, headerValue);
+
                     if (headerName.equalsIgnoreCase("Content-Length")) {
                         try {
                             contentLength = Integer.parseInt(headerValue);
+
                         } catch (NumberFormatException e) {
                             System.err.println("Invalid Content-Length header: " + headerValue);
-                            contentLength = -1; // Set to -1 to indicate an invalid length
+                        
                         }
                     }
                 }
                 
-            }
-
-            // If Content-Length is not found or is invalid, return a 400 Bad Request response
-            if (contentLength <= 0) {
-                sendResponse(out, 400, "Bad Request: Content-Length header is missing or invalid.");
-                clientSocket.close();
-                return;
             }
         
             // If the method is POST or PUT and has content length read the request body
@@ -121,12 +140,13 @@ public class ServerRequestHandler {
             if(method.equalsIgnoreCase("POST") || method.equalsIgnoreCase("PUT")) {
                 if(contentLength > 0){
                     // Read the request body based on the Content-Length header
-                    char[] bodyChars = new char[contentLength];
-                    int bytesRead = 0;
                     int result;
+                    int bytesRead = 0;
+                    char[] bodyChars = new char[contentLength];
 
                     while (bytesRead < contentLength && (result = in.read(bodyChars, bytesRead, contentLength - bytesRead)) != -1) {
                         bytesRead += result;
+
                     }
 
                     requestBody = new String(bodyChars, 0, bytesRead);
@@ -135,46 +155,49 @@ public class ServerRequestHandler {
                 }
             }
 
-
-            String responseBody = "";
-            int statusCode = 200; // Default to 200 OK
-
             try{
                 // Process the request using the Broker class
-                responseBody = winter.handleRequest(method, uri, requestBody, headers);
-            } catch (IllegalArgumentException e) {
-                statusCode = 400; // Bad Request or invalid parameters
-                responseBody = "{ \"error\": \"" + e.getMessage() + "\" }";
-                System.err.println("Bad Request Error (400): " + e.getMessage());
-            } catch (UnsupportedOperationException e) {
-                statusCode = 405; // Method Not Allowed
-                responseBody = "{ \"error\": \"" + e.getMessage() + "\" }";
-                System.err.println("Method Not Allowed Error (405): " + e.getMessage());
+                Response response = winter.handleRequest(method, uri, requestBody, headers);
+               
+                sendResponse(out, response.getStatusCode(), response.getBody());
             } catch (Exception e) {
-                statusCode = 500; // Internal Server Error
-                responseBody = "{ \"error\": \"Internal Server Error: " + e.getMessage() + "\" }";
-                System.err.println("Internal Server Error: (500): " + e.getMessage());
-                //e.printStackTrace();
-            }
 
-            // Send a 200 OK response with the processed response body
-            sendResponse(out, statusCode, responseBody);
+                System.err.println("Unexpected Error: " + e.getMessage());
+                e.printStackTrace();
 
-            clientSocket.close();
-        } catch (IOException e) {
-            System.err.println("Error handling client request: " + e.getMessage());
-            //e.printStackTrace();
-        } finally{
-            try{
-                if (clientSocket != null && !clientSocket.isClosed()) {
-                    clientSocket.close();
+                String errorBody;
+
+                try{
+                    errorBody = marshaller.marshal(new RemoteError(500, " Server Error: " + e.getMessage(), e.getClass().getSimpleName()));
+                } catch (Exception marshalException) {
+                    System.err.println("Error marshalling error response: " + marshalException.getMessage());
+
+                    errorBody = "{\"code\":500, \"message\": \"Failed to marshal error response, \"type\": \"Internal Server Error\"}";
+
+                    sendResponse(out, 500, errorBody);
+                } finally{
+                    try{
+                        if (clientSocket != null && !clientSocket.isClosed()) {
+                            clientSocket.close();
+                        }
+                    } catch (IOException ex) {
+                        System.err.println("Error closing client socket: " + ex.getMessage());
+                    }
                 }
-            } catch (IOException e) {
-                System.err.println("Error closing client socket: " + e.getMessage());
             }
-        }
+        } catch (Exception e) {
+            System.err.println("Error handling client request: " + e.getMessage());
+            e.printStackTrace();
+        } 
     }
 
+    /**
+     * Sends an HTTP response back to the client.
+     * @param out The BufferedWriter to send the response.
+     * @param statusCode The HTTP status code to send.
+     * @param responseBody The body of the response.
+     * @throws IOException If an error occurs while sending the response.
+     */
     private void sendResponse(BufferedWriter out, int statusCode, String responseBody) throws IOException {
         String statusMessage = switch(statusCode) {
             case 200 -> "OK";

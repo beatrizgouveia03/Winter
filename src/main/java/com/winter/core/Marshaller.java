@@ -1,16 +1,22 @@
 package com.winter.core;
 
+import java.util.Map;
+import java.util.HashMap;
+import java.lang.reflect.Type;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
-import java.lang.reflect.Type;
-import java.util.HashMap;
-import java.util.Map;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
+
 import com.winter.annotations.Param;
 
+/**
+ * Marshaller is responsible for converting method parameters from HTTP request data
+ * (query parameters and JSON body) into Java objects, and for converting Java objects
+ * into JSON strings for HTTP responses.
+ */
 public class Marshaller {
     private Gson gson;
 
